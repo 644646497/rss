@@ -1,0 +1,7 @@
+feedparser
+feedgenerator
+requests
+trafilatura
+lxml
+cssselect
+html5lib
