@@ -38,5 +38,5 @@ jobs:
             exit 0
           fi
           
-          git commit -m "Update NYT 中文全文 RSS $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git commit -m "Update NYT"
           git push
