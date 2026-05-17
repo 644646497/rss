@@ -1,77 +1,109 @@
 import requests
-import feedgenerator
 import feedparser
 import trafilatura
 from datetime import datetime
 import time
-import sys
 
-RSS_URL = "https://cn.nytimes.com/rss/news.xml"   # 纽约时报中文官方 RSS
+RSS_URL = "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
 OUTPUT_FILE = "feed.xml"
-USER_AGENT = "Mozilla/5.0 (compatible; KindleEar-NYT-RSS/1.0)"
 
-def clean_html(html):
-    if not html:
-        return ""
-    # 清理 NYT 常见多余元素
-    import re
-    html = re.sub(r'<div class="[^"]*?(ad|related|share|footer|header|nav)[^"]*?".*?</div>', '', html, flags=re.I | re.S)
-    return html
+# 使用真实的浏览器头
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
 
 def fetch_fulltext(url):
+    """使用多种方式提取全文"""
     try:
-        downloaded = trafilatura.fetch_url(url, decode=True)
+        # 方法1：直接 fetch_url
+        downloaded = trafilatura.fetch_url(url, user_agent=HEADERS['User-Agent'])
         if downloaded:
-            result = trafilatura.extract(downloaded, 
-                                       include_formatting=True,
-                                       include_links=True,
-                                       include_images=True,
-                                       output_format="html",
-                                       favor_recall=True)
-            return clean_html(result) if result else None
+            result = trafilatura.extract(downloaded, include_formatting=True)
+            if result:
+                return result
+        
+        # 方法2：使用 requests + trafilatura
+        resp = requests.get(url, headers=HEADERS, timeout=30)
+        if resp.status_code == 200:
+            result = trafilatura.extract(resp.text, include_formatting=True)
+            if result:
+                return result
     except Exception as e:
-        print(f"提取失败 {url}: {e}")
+        print(f"  全文提取失败: {e}")
     return None
 
 def main():
-    print("开始获取 NYT 中文 RSS...")
-
-    feed = feedgenerator.Rss201rev2Feed(
-        title="纽约时报中文网 - 全文版",
-        link="https://cn.nytimes.com/",
-        description="纽约时报中文网全文 RSS（GitHub Actions 生成）",
-        language="zh-CN",
-    )
-
-    resp = requests.get(RSS_URL, headers={"User-Agent": USER_AGENT}, timeout=30)
-    original_feed = feedparser.parse(resp.content)
-
-    print(f"共发现 {len(original_feed.entries)} 条新闻")
-
-    for i, entry in enumerate(original_feed.entries[:20]):
+    print("开始抓取纽约时报全文...")
+    
+    resp = requests.get(RSS_URL, headers=HEADERS, timeout=30)
+    feed = feedparser.parse(resp.content)
+    
+    rss_items = []
+    
+    for i, entry in enumerate(feed.entries[:10]):
         title = entry.get('title', '无标题')
         link = entry.get('link')
-        print(f"[{i+1}/20] 处理: {title[:60]}...")
-
-        full_content = fetch_fulltext(link)
-        description = full_content if full_content else entry.get('summary', entry.get('description', ''))
-
-        pub_parsed = entry.get('published_parsed') or entry.get('updated_parsed')
-        pubdate = datetime(*pub_parsed[:6]) if pub_parsed else datetime.utcnow()
-
-        feed.add_item(
-            title=title,
-            link=link,
-            description=description,
-            pubdate=pubdate,
-            unique_id=link,
-        )
-        time.sleep(2)
-
+        if not link:
+            continue
+        
+        print(f"[{i+1}] 抓取: {title[:50]}...")
+        
+        # 提取全文
+        content = fetch_fulltext(link)
+        
+        # 如果全文提取失败，使用摘要
+        if not content:
+            content = entry.get('summary', entry.get('description', ''))
+            print(f"  使用摘要")
+        else:
+            print(f"  成功提取全文 ({len(content)} 字符)")
+        
+        pubdate = entry.get('published_parsed')
+        if pubdate:
+            pubdate = datetime(*pubdate[:6])
+        else:
+            pubdate = datetime.now()
+        
+        rss_items.append({
+            'title': title,
+            'link': link,
+            'description': content,
+            'pubdate': pubdate
+        })
+        
+        time.sleep(1)  # 避免被封
+    
+    # 生成 RSS
+    rss_output = f'''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>纽约时报 - 全文版</title>
+<link>https://www.nytimes.com</link>
+<description>自动抓取的纽约时报全文</description>
+<lastBuildDate>{datetime.now().strftime('%a, %d %b %Y %H:%M:%S GMT')}</lastBuildDate>
+'''
+    
+    for item in rss_items:
+        rss_output += f'''
+<item>
+    <title><![CDATA[{item['title']}]]></title>
+    <link>{item['link']}</link>
+    <pubDate>{item['pubdate'].strftime('%a, %d %b %Y %H:%M:%S GMT')}</pubDate>
+    <description><![CDATA[
+        <h2>{item['title']}</h2>
+        <hr/>
+        {item['description']}
+        <hr/>
+        <p><a href="{item['link']}">📖 阅读原文</a></p>
+    ]]></description>
+</item>'''
+    
+    rss_output += '\n</channel>\n</rss>'
+    
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        feed.write(f, 'utf-8')
-
-    print("✅ NYT 中文全文 RSS 生成完成")
+        f.write(rss_output)
+    
+    print(f"\n✅ 完成！共 {len(rss_items)} 篇文章")
 
 if __name__ == "__main__":
     main()
