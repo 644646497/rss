@@ -3,7 +3,7 @@ name: NYT 中文全文 RSS
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */2 * * *'   # 每2小时更新一次（NYT 更新不算太频繁）
+    - cron: '0 */2 * * *'
 
 permissions:
   contents: write
@@ -25,7 +25,7 @@ jobs:
           pip install trafilatura feedgenerator requests feedparser
 
       - name: Generate Full-text RSS
-        run: python nytimes_fulltext_rss.py
+        run: python nytimes.py
 
       - name: Commit and Push
         run: |
