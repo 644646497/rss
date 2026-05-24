@@ -6,7 +6,7 @@ import time
 import re
 
 # 改用官方中文源
-RSS_URL = "https://cn.nytimes.com/rss/"
+RSS_URL = "https://feedx.net/rss/nytimes.xml"
 OUTPUT_FILE = "feed.xml"
 
 HEADERS = {
